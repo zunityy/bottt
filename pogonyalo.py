@@ -187,7 +187,7 @@ async def daily_job(context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=int(chat_id),
-                text=f"@{username} — *{core}*",
+                text=f"@{username} — *{core}* 🎩",
                 parse_mode="Markdown"
             )
         except Exception as e:
@@ -217,3 +217,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
