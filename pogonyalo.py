@@ -1,19 +1,14 @@
-import os, json, random, asyncio, time, logging
-from datetime import datetime, timedelta
+import random
+import json
 import pytz
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, AIORateLimiter
-from telegram.error import RetryAfter
+from datetime import time
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
+# --- Настройки ---
 TOKEN = "8384986879:AAGUBtm3Fg0cNUa-IlroraoWQ1M7eMz2PNM"
-
-logging.basicConfig(
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    level=logging.INFO,
-)
-
 NICKNAMES = [
-    "Лепман Коричневый Змей", "Лепман Марафон Коричневых Змей", "Лепман Снюсный Барон", "Лепман Король Желтых Дождей",
+     "Лепман Коричневый Змей", "Лепман Марафон Коричневых Змей", "Лепман Снюсный Барон", "Лепман Король Желтых Дождей",
     "Лепман Линьчиковый Лежун", "Лепман Животик+2кг", "Лепман Балду Пинатель", "Лепман Унитаз — Это Жизнь",
     "Лепман Железный Снюсоносец", "Лепман Титан Подоконника", "Лепман Властелин Люкса", "Лепман Папа Линьчика",
     "Лепман Гроза Окон", "Лепман Шлёп Утренний", "Лепман Книга-Моча", "Лепман Лежит И Красивый",
@@ -79,110 +74,61 @@ NICKNAMES = [
     "Лепман Сип-Барон", "Лепман Легенда Сипа", "Лепман Король Сипа", "Лепман Сипун Гладиатор",
     "Лепман Сип-Гроза", "Лепман Сипун Шаман", "Лепман Сипный Волк", "Лепман Марафон Сипа"
 ]
-BANNED_SUBSTRINGS = {"даун"}
-NICKNAMES = [n for n in NICKNAMES if all(b.lower() not in n.lower() for b in BANNED_SUBSTRINGS)]
 
-BTN_GEN = "Сгенерировать погоняло"
-STORE_FILE = "channel_binding.json"
-DAILY_FILE = "daily_data.json"
+STATE_FILE = "nick_state.json"
 
-_last_call = {}
-def _cooldown(chat_id: int, cooldown=1.0) -> bool:
-    now = time.monotonic()
-    prev = _last_call.get(chat_id, 0)
-    if now - prev < cooldown:
-        return False
-    _last_call[chat_id] = now
-    return True
-
-def load_json(file):
-    if os.path.exists(file):
-        with open(file, "r", encoding="utf-8") as f:
+# --- Функции сохранения/загрузки ---
+def load_state():
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {}
+    except FileNotFoundError:
+        return {}
 
-def save_json(file, data):
-    with open(file, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def save_state(state):
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False)
 
-def pick_name_html(exclude=None):
-    if exclude is None:
-        exclude = []
-    choices = [n for n in NICKNAMES if n not in exclude] or NICKNAMES
-    nickname = random.choice(choices)
-    core = nickname.replace("Лепман", "").strip(" —-")
-    return f"<b>Лепман</b> — <i>{core}</i>", nickname
+# --- Выбор погоняла ---
+def get_new_nickname(user_id):
+    state = load_state()
+    last_nicks = state.get(str(user_id), [])
+    available = [n for n in NICKNAMES if n not in last_nicks]
+    if not available:
+        available = NICKNAMES.copy()
+        last_nicks.clear()
+    nick = random.choice(available)
+    last_nicks.append(nick)
+    if len(last_nicks) > 7:
+        last_nicks.pop(0)
+    state[str(user_id)] = last_nicks
+    save_state(state)
+    return nick
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "тыкни кнопку, чтобы выдать рофельное прозвище (•‿•)",
-        reply_markup=ReplyKeyboardMarkup([[BTN_GEN]], resize_keyboard=True)
+# --- Команда для включения ежедневной выдачи ---
+async def daily_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    context.job_queue.run_daily(
+        send_daily_nick,
+        time=time(hour=12, minute=0, tzinfo=pytz.timezone("Europe/Moscow")),
+        data={"user_id": user_id, "chat_id": chat_id},
+        name=str(user_id)
     )
+    await update.message.reply_text("Буду выдавать тебе погоняло каждый день в 12:00 по МСК")
 
-async def nickname_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not _cooldown(update.effective_chat.id):
-        return
-    html, _ = pick_name_html()
-    await update.message.reply_html(html)
+# --- Отправка ежедневного погоняла ---
+async def send_daily_nick(context: ContextTypes.DEFAULT_TYPE):
+    user_id = context.job.data["user_id"]
+    chat_id = context.job.data["chat_id"]
+    nick = get_new_nickname(user_id)
+    await context.bot.send_message(chat_id, f"@{user_id}, твоё погоняло сегодня — *{nick}*", parse_mode="Markdown")
 
-async def daily_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_chat.id)
-    data = load_json(DAILY_FILE)
-    if user_id not in data:
-        data[user_id] = {"history": []}
-    save_json(DAILY_FILE, data)
-    await update.message.reply_text("Буду выдавать тебе погоняло каждый день в 12:00 по МСК ✔️")
-
-async def daily_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_chat.id)
-    data = load_json(DAILY_FILE)
-    if user_id in data:
-        del data[user_id]
-        save_json(DAILY_FILE, data)
-        await update.message.reply_text("Ежедневная выдача погоняла отключена ❌")
-    else:
-        await update.message.reply_text("У тебя и так нет автопогоняла.")
-
-async def daily_job(app):
-    tz = pytz.timezone("Europe/Moscow")
-    while True:
-        now = datetime.now(tz)
-        target = now.replace(hour=12, minute=0, second=0, microsecond=0)
-        if now >= target:
-            target += timedelta(days=1)
-        await asyncio.sleep((target - now).total_seconds())
-
-        data = load_json(DAILY_FILE)
-        for chat_id, info in data.items():
-            history = info.get("history", [])
-            html, nickname = pick_name_html(exclude=history)
-            try:
-                await app.bot.send_message(chat_id=int(chat_id), text=f"@{chat_id}, твоё погоняло сегодня — {html}", parse_mode="HTML")
-            except Exception as e:
-                logging.warning(f"Не удалось отправить {chat_id}: {e}")
-            history.append(nickname)
-            if len(history) > 7:
-                history.pop(0)
-            data[chat_id]["history"] = history
-        save_json(DAILY_FILE, data)
-
-async def error_handler(update: object, context):
-    logging.warning(f"Error: {context.error}")
-
+# --- Запуск ---
 def main():
-    app = ApplicationBuilder().token(TOKEN).job_queue().build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("nickname", nickname_cmd))
-    app.add_handler(CommandHandler("daily_on", daily_on))
-    app.add_handler(CommandHandler("daily_off", daily_off))
-
-    app.add_error_handler(error_handler)
-
-    app.job_queue.run_once(lambda *_: asyncio.create_task(daily_job(app)), 1)
-
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("daily", daily_command))
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-
