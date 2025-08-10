@@ -1,14 +1,15 @@
-import random
 import json
+import random
 import pytz
 from datetime import time
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-# --- Настройки ---
+# ==== НАСТРОЙКИ ====
 TOKEN = "8384986879:AAGUBtm3Fg0cNUa-IlroraoWQ1M7eMz2PNM"
+BTN_GEN = "Сгенерировать погоняло"
 NICKNAMES = [
-     "Лепман Коричневый Змей", "Лепман Марафон Коричневых Змей", "Лепман Снюсный Барон", "Лепман Король Желтых Дождей",
+    "Лепман Коричневый Змей", "Лепман Марафон Коричневых Змей", "Лепман Снюсный Барон", "Лепман Король Желтых Дождей",
     "Лепман Линьчиковый Лежун", "Лепман Животик+2кг", "Лепман Балду Пинатель", "Лепман Унитаз — Это Жизнь",
     "Лепман Железный Снюсоносец", "Лепман Титан Подоконника", "Лепман Властелин Люкса", "Лепман Папа Линьчика",
     "Лепман Гроза Окон", "Лепман Шлёп Утренний", "Лепман Книга-Моча", "Лепман Лежит И Красивый",
@@ -75,9 +76,10 @@ NICKNAMES = [
     "Лепман Сип-Гроза", "Лепман Сипун Шаман", "Лепман Сипный Волк", "Лепман Марафон Сипа"
 ]
 
-STATE_FILE = "nick_state.json"
+STATE_FILE = "state.json"
 
-# --- Функции сохранения/загрузки ---
+
+# ==== ВСПОМОГАТЕЛЬНЫЕ ====
 def load_state():
     try:
         with open(STATE_FILE, "r", encoding="utf-8") as f:
@@ -87,48 +89,76 @@ def load_state():
 
 def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False)
+        json.dump(state, f, ensure_ascii=False, indent=2)
 
-# --- Выбор погоняла ---
-def get_new_nickname(user_id):
+def pick_name_html(chat_id: str) -> str:
     state = load_state()
-    last_nicks = state.get(str(user_id), [])
-    available = [n for n in NICKNAMES if n not in last_nicks]
-    if not available:
-        available = NICKNAMES.copy()
-        last_nicks.clear()
-    nick = random.choice(available)
-    last_nicks.append(nick)
-    if len(last_nicks) > 7:
-        last_nicks.pop(0)
-    state[str(user_id)] = last_nicks
-    save_state(state)
-    return nick
+    used = state.get(str(chat_id), [])
+    available = [n for n in NICKNAMES if n not in used]
 
-# --- Команда для включения ежедневной выдачи ---
-async def daily_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    chat_id = update.effective_chat.id
-    context.job_queue.run_daily(
-        send_daily_nick,
-        time=time(hour=12, minute=0, tzinfo=pytz.timezone("Europe/Moscow")),
-        data={"user_id": user_id, "chat_id": chat_id},
-        name=str(user_id)
+    if not available:  # если всё уже использовано
+        used.clear()
+        available = NICKNAMES.copy()
+
+    nickname = random.choice(available)
+    used.append(nickname)
+    if len(used) > 7:
+        used.pop(0)
+    state[str(chat_id)] = used
+    save_state(state)
+
+    core = nickname.replace("Лепман", "").strip(" —-")
+    return f"<b>Лепман</b> — <i>{core}</i>"
+
+
+# ==== КОМАНДЫ ====
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    kb = ReplyKeyboardMarkup([[BTN_GEN]], resize_keyboard=True)
+    await update.message.reply_text("жми кнопку ниже ↓", reply_markup=kb)
+
+async def lep_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    html = pick_name_html(update.effective_chat.id)
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=html,
+        parse_mode="HTML"
     )
+
+async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if (update.message.text or "").strip() == BTN_GEN:
+        html = pick_name_html(update.effective_chat.id)
+        await update.message.reply_html(html)
+
+async def daily_job(context: ContextTypes.DEFAULT_TYPE):
+    for chat_id in load_state().keys():
+        html = pick_name_html(chat_id)
+        await context.bot.send_message(chat_id=int(chat_id), text=html, parse_mode="HTML")
+
+async def set_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    state = load_state()
+    if chat_id not in state:
+        state[chat_id] = []
+        save_state(state)
     await update.message.reply_text("Буду выдавать тебе погоняло каждый день в 12:00 по МСК")
 
-# --- Отправка ежедневного погоняла ---
-async def send_daily_nick(context: ContextTypes.DEFAULT_TYPE):
-    user_id = context.job.data["user_id"]
-    chat_id = context.job.data["chat_id"]
-    nick = get_new_nickname(user_id)
-    await context.bot.send_message(chat_id, f"@{user_id}, твоё погоняло сегодня — *{nick}*", parse_mode="Markdown")
 
-# --- Запуск ---
+# ==== MAIN ====
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("daily", daily_command))
+
+    # ежедневная задача
+    msk = pytz.timezone("Europe/Moscow")
+    app.job_queue.run_daily(daily_job, time(hour=12, minute=0, tzinfo=msk))
+
+    # команды
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("lep", lep_cmd))
+    app.add_handler(CommandHandler("setdaily", set_daily))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_button))
+
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
