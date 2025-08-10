@@ -1,18 +1,17 @@
 import os, json, random, asyncio, time, logging
+from datetime import datetime, timedelta
+import pytz
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, AIORateLimiter
-from telegram.error import RetryAfter, TimedOut, NetworkError
+from telegram.error import RetryAfter
 
-# ВАЖНО: ТВОЙ ТОКЕН (лучше вынести в переменную окружения позже)
 TOKEN = "8384986879:AAGUBtm3Fg0cNUa-IlroraoWQ1M7eMz2PNM"
 
-# Логирование
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     level=logging.INFO,
 )
 
-# Погоняла (слиты в один список, без вложенного "nicknames = [...]")
 NICKNAMES = [
     "Лепман Коричневый Змей", "Лепман Марафон Коричневых Змей", "Лепман Снюсный Барон", "Лепман Король Желтых Дождей",
     "Лепман Линьчиковый Лежун", "Лепман Животик+2кг", "Лепман Балду Пинатель", "Лепман Унитаз — Это Жизнь",
@@ -20,26 +19,26 @@ NICKNAMES = [
     "Лепман Гроза Окон", "Лепман Шлёп Утренний", "Лепман Книга-Моча", "Лепман Лежит И Красивый",
     "Лепман 110 Коричневый", "Лепман С Продристью", "Лепман Вечный Балабол", "Лепман Круг Самопотерянных",
     "Верховный Бушист",
-    "Главный Анус", "Кикша-Пожиратель", "Бушистый Подзалупин", "Анусоносец", "Кикша Линьчиковая",
+    "Главный Анус", "Кишка-Пожиратель", "Бушистый Подзалупин", "Анусоносец", "Кишка Линьчиковая",
     "Повелитель Бушизма и Анусов", "Сипарь С Очком", "Гнойный Линьчикарь", "Магистр Заднепрохода",
-    "Трипперный Бушонок", "Кикша-Пердуша", "Анусоразрушитель", "Сипун Глубокого Очка", "Кикшевый Громила",
-    "Очконосный Архонт", "Анусоед Линьчиков", "Бушизмовод Очковый", "Кикша-Вонючка", "Сипоносец Анусов",
-    "Паховый Линьчикарь", "Заднепроходный Пророк", "Кикша Мясная", "Линьчикоанус", "Очковый Шаман",
-    "Кикша-Разрушитель", "Анусный Оракул", "Бушист Сраный", "Гнойно-Сипучий", "Кикша-Вертолёт",
+    "Трипперный Бушонок", "Кишка-Пердуша", "Анусоразрушитель", "Сипун Глубокого Очка", "Кикшевый Громила",
+    "Очконосный Архонт", "Анусоед Линьчиков", "Бушизмовод Очковый", "Кишка-Вонючка", "Сипоносец Анусов",
+    "Паховый Линьчикарь", "Заднепроходный Пророк", "Кишка Мясная", "Линьчикоанус", "Очковый Шаман",
+    "Кишка-Разрушитель", "Анусный Оракул", "Бушист Сраный", "Гнойно-Сипучий", "Кишка-Вертолёт",
     "Очкодав Бушизма", "Сральный Линьчикарь", "Кикшевый Сосальщик", "Анусообниматель", "Линьчикоразрыватель",
-    "Сипарь Очковый", "Кикша-Мочалка", "Бушизмовый Говнарь", "Очковый Кикшевод", "Анусоносный Линьчикарь",
-    "Кикша Сырная", "Очкосос Легендарный", "Линьчикоочкоед", "Кикша-Свинтус", "Очкодавец Бушистый",
-    "Анусовый Гроза", "Кикша Плесневелая", "Сипарь Глубинный", "Очкоразрушитель Линьчиков", "Кикша Кислотная",
-    "Бушизмопердун", "Очковый Повелитель", "Кикша-Венеричка", "Линьчикоочковый", "Гнойно-Кикшевый",
-    "Анусоноситель", "Кикша-Хрюша", "Очковый Линьчикарь", "Сипарь Анусный", "Кикша-Жмур", "Очкозавр",
-    "Анусораздуватель", "Линьчикоанальный", "Кикша-Брызгун", "Очковый Рыцарь", "Гнойный Очкоед",
-    "Кикша-Мазохист", "Анусоочиститель", "Очкокидатель", "Кикша-Червивый", "Бушизмосраколиз",
-    "Очковый Инквизитор", "Кикша-Перделка", "Анусотряс", "Сипарь Сральный", "Очкосекущий",
-    "Кикша-Заднеприводный", "Линьчикосос Анусов", "Очконосец", "Кикша-Вшивка", "Анусобушонок",
-    "Очковый Зверь", "Кикша-Срачмейстер", "Гнойно-Анусный", "Очкотрон 3000", "Кикша-Бушист",
-    "Анусодушитель", "Очковый Мрак", "Кикша-Пердач", "Анусорез", "Очковый Линьчикоед", "Кикша-Сипарь",
-    "Бушизмочкоед", "Очковый Вонючка", "Кикша-Анусонос", "Сипарь Очковый Грозный", "Попочка с сисечками",
-    "Анусоразбойник", "Кикша-Очковерт", "Очковый Линьчикоразрушитель",
+    "Сипарь Очковый", "Кишка-Мочалка", "Бушизмовый Говнарь", "Очковый Кикшевод", "Анусоносный Линьчикарь",
+    "Кишка Сырная", "Очкосос Легендарный", "Линьчикоочкоед", "Кишка-Свинтус", "Очкодавец Бушистый",
+    "Анусовый Гроза", "Кишка Плесневелая", "Сипарь Глубинный", "Очкоразрушитель Линьчиков", "Кишка Кислотная",
+    "Бушизмопердун", "Очковый Повелитель", "Кишка-Венеричка", "Линьчикоочковый", "Гнойно-Кикшевый",
+    "Анусоноситель", "Кишка-Хрюша", "Очковый Линьчикарь", "Сипарь Анусный", "Кишка-Жмур", "Очкозавр",
+    "Анусораздуватель", "Линьчикоанальный", "Кишка-Брызгун", "Очковый Рыцарь", "Гнойный Очкоед",
+    "Кишка-Мазохист", "Анусоочиститель", "Очкокидатель", "Кишка-Червивый", "Бушизмосраколиз",
+    "Очковый Инквизитор", "Кишка-Перделка", "Анусотряс", "Сипарь Сральный", "Очкосекущий",
+    "Кишка-Заднеприводный", "Линьчикосос Анусов", "Очконосец", "Кишка-Вшивка", "Анусобушонок",
+    "Очковый Зверь", "Кишка-Срачмейстер", "Гнойно-Анусный", "Очкотрон 3000", "Кишка-Бушист",
+    "Анусодушитель", "Очковый Мрак", "Кишка-Пердач", "Анусорез", "Очковый Линьчикоед", "Кишка-Сипарь",
+    "Бушизмочкоед", "Очковый Вонючка", "Кишка-Анусонос", "Сипарь Очковый Грозный", "Попочка с сисечками",
+    "Анусоразбойник", "Кишка-Очковерт", "Очковый Линьчикоразрушитель",
     "Лепман Мастер Проливных Дождей", "Лепман Линьчиковый Гладиатор", "Лепман Снюс на Вечер",
     "Лепман Хранитель Преворкаута", "Лепман Писатель Битов", "Лепман Писаться Идём", "Лепман Сношающий Рты",
     "Лепман Легенда Жёлтого Потока", "Лепман Я Реально Красивый", "Лепман Властелин Линьчика", "Лепман Мастер 30 Секунд",
@@ -80,14 +79,12 @@ NICKNAMES = [
     "Лепман Сип-Барон", "Лепман Легенда Сипа", "Лепман Король Сипа", "Лепман Сипун Гладиатор",
     "Лепман Сип-Гроза", "Лепман Сипун Шаман", "Лепман Сипный Волк", "Лепман Марафон Сипа"
 ]
-
-# можно фильтровать слова, которые не хочешь выпускать
 BANNED_SUBSTRINGS = {"даун"}
 NICKNAMES = [n for n in NICKNAMES if all(b.lower() not in n.lower() for b in BANNED_SUBSTRINGS)]
 
 BTN_GEN = "Сгенерировать погоняло"
-BTN_POST = "Отправить в канал"
 STORE_FILE = "channel_binding.json"
+DAILY_FILE = "daily_data.json"
 
 _last_call = {}
 def _cooldown(chat_id: int, cooldown=1.0) -> bool:
@@ -98,104 +95,91 @@ def _cooldown(chat_id: int, cooldown=1.0) -> bool:
     _last_call[chat_id] = now
     return True
 
-def make_markup():
-    return ReplyKeyboardMarkup([[BTN_GEN, BTN_POST]], resize_keyboard=True)
-
-def pick_name_html() -> str:
-    nickname = random.choice(NICKNAMES)
-    core = nickname.replace("Лепман", "").strip(" —-")
-    return f"<b>Лепман</b> — <i>{core}</i>"
-
-def load_binding():
-    if os.path.exists(STORE_FILE):
-        with open(STORE_FILE, "r", encoding="utf-8") as f:
+def load_json(file):
+    if os.path.exists(file):
+        with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
-def save_binding(data):
-    with open(STORE_FILE, "w", encoding="utf-8") as f:
+def save_json(file, data):
+    with open(file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+def pick_name_html(exclude=None):
+    if exclude is None:
+        exclude = []
+    choices = [n for n in NICKNAMES if n not in exclude] or NICKNAMES
+    nickname = random.choice(choices)
+    core = nickname.replace("Лепман", "").strip(" —-")
+    return f"<b>Лепман</b> — <i>{core}</i>", nickname
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.effective_message.reply_text(
-        "тыкни кнопку, чтобы выдать рофельное прозвище (•‿•)", reply_markup=make_markup()
+    await update.message.reply_text(
+        "тыкни кнопку, чтобы выдать рофельное прозвище (•‿•)",
+        reply_markup=ReplyKeyboardMarkup([[BTN_GEN]], resize_keyboard=True)
     )
 
 async def nickname_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _cooldown(update.effective_chat.id):
         return
-    await update.effective_message.reply_html(pick_name_html())
+    html, _ = pick_name_html()
+    await update.message.reply_html(html)
 
-async def lep_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not _cooldown(update.effective_chat.id):
-        return
-    msg = update.effective_message
-    try:
-        await msg.reply_html(pick_name_html())
-    except RetryAfter as e:
-        await asyncio.sleep(e.retry_after + 0.2)
-        await msg.reply_html(pick_name_html())
+async def daily_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_chat.id)
+    data = load_json(DAILY_FILE)
+    if user_id not in data:
+        data[user_id] = {"history": []}
+    save_json(DAILY_FILE, data)
+    await update.message.reply_text("Буду выдавать тебе погоняло каждый день в 12:00 по МСК ✔️")
 
-async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    txt = (update.effective_message.text or "").strip()
-    if txt == BTN_GEN:
-        if _cooldown(update.effective_chat.id):
-            await update.effective_message.reply_html(pick_name_html())
-    elif txt == BTN_POST:
-        bind = load_binding()
-        target = bind.get("chat_identifier")
-        if not target:
-            return await update.effective_message.reply_text(
-                "Канал не привязан. Используй /bind_channel @username или перешли мне пост из канала (для приватного)."
-            )
-        await context.bot.send_message(chat_id=target, text=pick_name_html(), parse_mode="HTML")
-        await update.effective_message.reply_text("Отправил в канал ✔️")
+async def daily_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_chat.id)
+    data = load_json(DAILY_FILE)
+    if user_id in data:
+        del data[user_id]
+        save_json(DAILY_FILE, data)
+        await update.message.reply_text("Ежедневная выдача погоняла отключена ❌")
     else:
-        await update.effective_message.reply_text("жми кнопку ниже ↓", reply_markup=make_markup())
+        await update.message.reply_text("У тебя и так нет автопогоняла.")
 
-async def bind_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        return await update.effective_message.reply_text("Использование: /bind_channel @username_канала")
-    username = context.args[0]
-    if not username.startswith("@"):
-        return await update.effective_message.reply_text("Укажи канал с @, например: /bind_channel @my_channel")
-    chat = await context.bot.get_chat(username)
-    save_binding({"chat_identifier": username, "chat_title": chat.title or username, "chat_id": chat.id})
-    await update.effective_message.reply_text(f"Привязал канал: {chat.title} (идентификатор {username})")
+async def daily_job(app):
+    tz = pytz.timezone("Europe/Moscow")
+    while True:
+        now = datetime.now(tz)
+        target = now.replace(hour=12, minute=0, second=0, microsecond=0)
+        if now >= target:
+            target += timedelta(days=1)
+        await asyncio.sleep((target - now).total_seconds())
 
-async def bind_by_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.effective_message
-    if msg and msg.forward_from_chat and msg.forward_from_chat.type == "channel":
-        ch = msg.forward_from_chat
-        save_binding({"chat_identifier": ch.id, "chat_title": ch.title or str(ch.id), "chat_id": ch.id})
-        await update.effective_message.reply_text(f"Привязал приватный канал: {ch.title} (ID {ch.id}) ✅")
-
-async def post_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    bind = load_binding()
-    target = bind.get("chat_identifier")
-    if not target:
-        return await update.effective_message.reply_text("Сначала привяжи канал: /bind_channel @username или пришли форвард из канала.")
-    await context.bot.send_message(chat_id=target, text=pick_name_html(), parse_mode="HTML")
-    await update.effective_message.reply_text("Отправил в канал ✔️")
+        data = load_json(DAILY_FILE)
+        for chat_id, info in data.items():
+            history = info.get("history", [])
+            html, nickname = pick_name_html(exclude=history)
+            try:
+                await app.bot.send_message(chat_id=int(chat_id), text=f"@{chat_id}, твоё погоняло сегодня — {html}", parse_mode="HTML")
+            except Exception as e:
+                logging.warning(f"Не удалось отправить {chat_id}: {e}")
+            history.append(nickname)
+            if len(history) > 7:
+                history.pop(0)
+            data[chat_id]["history"] = history
+        save_json(DAILY_FILE, data)
 
 async def error_handler(update: object, context):
-    ex = context.error
-    logging.warning(f"Error: {ex}")
-    if isinstance(ex, RetryAfter):
-        await asyncio.sleep(e.retry_after + 0.2)
+    logging.warning(f"Error: {context.error}")
 
 def main():
     app = ApplicationBuilder().token(TOKEN).rate_limiter(AIORateLimiter()).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("nickname", nickname_cmd))
-    app.add_handler(CommandHandler("lep", lep_cmd))
-    app.add_handler(CommandHandler("bind_channel", bind_channel))
-    app.add_handler(CommandHandler("post", post_cmd))
-    app.add_handler(MessageHandler(filters.FORWARDED & filters.ChatType.PRIVATE, bind_by_forward))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buttons))
+    app.add_handler(CommandHandler("daily_on", daily_on))
+    app.add_handler(CommandHandler("daily_off", daily_off))
 
     app.add_error_handler(error_handler)
+
+    app.job_queue.run_once(lambda *_: asyncio.create_task(daily_job(app)), 1)
 
     app.run_polling()
 
