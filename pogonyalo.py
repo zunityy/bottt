@@ -170,7 +170,7 @@ async def error_handler(update: object, context):
     logging.warning(f"Error: {context.error}")
 
 def main():
-    app = ApplicationBuilder().token(TOKEN).rate_limiter(AIORateLimiter()).build()
+    app = ApplicationBuilder().token(TOKEN).job_queue().build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("nickname", nickname_cmd))
@@ -185,3 +185,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
