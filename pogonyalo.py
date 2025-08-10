@@ -8,6 +8,8 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 # ==== НАСТРОЙКИ ====
 TOKEN = "8384986879:AAGUBtm3Fg0cNUa-IlroraoWQ1M7eMz2PNM"
 BTN_GEN = "Сгенерировать погоняло"
+
+# твой список
 NICKNAMES = [
     "Лепман Коричневый Змей", "Лепман Марафон Коричневых Змей", "Лепман Снюсный Барон", "Лепман Король Желтых Дождей",
     "Лепман Линьчиковый Лежун", "Лепман Животик+2кг", "Лепман Балду Пинатель", "Лепман Унитаз — Это Жизнь",
@@ -91,30 +93,44 @@ def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
-def pick_name_html(chat_id: str) -> str:
+def nickname_core(n: str) -> str:
+    # убираем префикс "Лепман" и тире, если он есть; иначе возвращаем как есть
+    s = n
+    if s.lower().startswith("лепман"):
+        s = s[len("Лепман"):].strip(" —-")
+    return s.strip()
+
+def pick_for_history(history: list[str]) -> str:
+    pool = [n for n in NICKNAMES if n not in history]
+    if not pool:
+        history.clear()
+        pool = NICKNAMES[:]
+    choice = random.choice(pool)
+    history.append(choice)
+    if len(history) > 7:
+        history.pop(0)
+    return choice
+
+def pick_name_html(chat_id: int) -> str:
+    """Для /lep и кнопки: «Лепман — <i>…</i>» с учётом истории чата"""
     state = load_state()
-    used = state.get(str(chat_id), [])
-    available = [n for n in NICKNAMES if n not in used]
-
-    if not available:  # если всё уже использовано
-        used.clear()
-        available = NICKNAMES.copy()
-
-    nickname = random.choice(available)
-    used.append(nickname)
-    if len(used) > 7:
-        used.pop(0)
-    state[str(chat_id)] = used
+    entry = state.get(str(chat_id)) or {"history": []}
+    nick = pick_for_history(entry["history"])
+    state[str(chat_id)] = entry
     save_state(state)
-
-    core = nickname.replace("Лепман", "").strip(" —-")
+    core = nickname_core(nick)
     return f"<b>Лепман</b> — <i>{core}</i>"
 
+def ensure_chat_entry(chat_id: int):
+    state = load_state()
+    if str(chat_id) not in state:
+        state[str(chat_id)] = {"history": []}
+        save_state(state)
 
-# ==== КОМАНДЫ ====
+# ==== КОМАНДЫ/ХЕНДЛЕРЫ ====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = ReplyKeyboardMarkup([[BTN_GEN]], resize_keyboard=True)
-    await update.message.reply_text("жми кнопку ниже ↓", reply_markup=kb)
+    await update.effective_message.reply_text("жми кнопку ниже ↓", reply_markup=kb)
 
 async def lep_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     html = pick_name_html(update.effective_chat.id)
@@ -125,40 +141,79 @@ async def lep_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if (update.message.text or "").strip() == BTN_GEN:
+    if (update.effective_message.text or "").strip() == BTN_GEN:
         html = pick_name_html(update.effective_chat.id)
-        await update.message.reply_html(html)
-
-async def daily_job(context: ContextTypes.DEFAULT_TYPE):
-    for chat_id in load_state().keys():
-        html = pick_name_html(chat_id)
-        await context.bot.send_message(chat_id=int(chat_id), text=html, parse_mode="HTML")
+        await update.effective_message.reply_html(html)
 
 async def set_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Включает ежедневную выдачу для *текущего чата* и сохраняет, кого тэгать."""
+    chat_id = str(update.effective_chat.id)
+    user = update.effective_user
+    username = user.username or user.first_name or "друг"
+
+    state = load_state()
+    entry = state.get(chat_id) or {"history": []}
+    entry["target"] = {"id": user.id, "username": username}
+    state[chat_id] = entry
+    save_state(state)
+
+    await update.effective_message.reply_text("Буду выдавать тебе погоняло каждый день в 12:00 по МСК")
+
+async def stop_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     state = load_state()
-    if chat_id not in state:
-        state[chat_id] = []
+    if chat_id in state and ("target" in state[chat_id]):
+        # не удаляем историю целиком — только цель рассылки
+        del state[chat_id]["target"]
         save_state(state)
-    await update.message.reply_text("Буду выдавать тебе погоняло каждый день в 12:00 по МСК")
+        await update.effective_message.reply_text("Ежедневная выдача в этом чате отключена.")
+    else:
+        await update.effective_message.reply_text("В этом чате ежедневная выдача и так выключена.")
 
+async def daily_job(context: ContextTypes.DEFAULT_TYPE):
+    """Ежедневная рассылка: «@username — *погоняло*» в канале/чате, где включили."""
+    state = load_state()
+    updates = False
+    for chat_id, entry in state.items():
+        target = entry.get("target")
+        if not target:
+            continue
+        # подобрать ник без повторов последних 7
+        nick_full = pick_for_history(entry.setdefault("history", []))
+        core = nickname_core(nick_full)
+        username = target.get("username") or "друг"
+
+        # отправляем в чат, формат '@username — *погоняло*'
+        try:
+            await context.bot.send_message(
+                chat_id=int(chat_id),
+                text=f"@{username} — *{core}*",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            # если не получилось отправить — просто пропустим
+            print(f"daily send failed for {chat_id}: {e}")
+        updates = True
+
+    if updates:
+        save_state(state)
 
 # ==== MAIN ====
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # ежедневная задача
+    # ежедневная задача в 12:00 по МСК
     msk = pytz.timezone("Europe/Moscow")
     app.job_queue.run_daily(daily_job, time(hour=12, minute=0, tzinfo=msk))
 
-    # команды
+    # команды/хендлеры
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("lep", lep_cmd))
     app.add_handler(CommandHandler("setdaily", set_daily))
+    app.add_handler(CommandHandler("stopdaily", stop_daily))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_button))
 
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
