@@ -3,7 +3,7 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, AIORateLimiter
 from telegram.error import RetryAfter, TimedOut, NetworkError
 
-# ВАЖНО: ТВОЙ ТОКЕН
+# ВАЖНО: ТВОЙ ТОКЕН (лучше вынести в переменную окружения позже)
 TOKEN = "8384986879:AAGUBtm3Fg0cNUa-IlroraoWQ1M7eMz2PNM"
 
 # Логирование
@@ -12,113 +12,34 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-# 200 погонял
+# Погоняла (слиты в один список, без вложенного "nicknames = [...]")
 NICKNAMES = [
     "Лепман Коричневый Змей", "Лепман Марафон Коричневых Змей", "Лепман Снюсный Барон", "Лепман Король Желтых Дождей",
     "Лепман Линьчиковый Лежун", "Лепман Животик+2кг", "Лепман Балду Пинатель", "Лепман Унитаз — Это Жизнь",
     "Лепман Железный Снюсоносец", "Лепман Титан Подоконника", "Лепман Властелин Люкса", "Лепман Папа Линьчика",
     "Лепман Гроза Окон", "Лепман Шлёп Утренний", "Лепман Книга-Моча", "Лепман Лежит И Красивый",
-    "Лепман 110 Коричневый", "Лепман С Продристью", "Лепман Вечный Балабол", "Лепман Круг Самопотерянных", "Верховный Бушист",
-    nicknames = [
-    "Главный Анус",
-    "Кикша-Пожиратель",
-    "Бушистый Подзалупин",
-    "Анусоносец",
-    "Кикша Линьчиковая",
-    "Повелитель Бушизма и Анусов",
-    "Сипарь С Очком",
-    "Гнойный Линьчикарь",
-    "Магистр Заднепрохода",
-    "Трипперный Бушонок",
-    "Кикша-Пердуша",
-    "Анусоразрушитель",
-    "Сипун Глубокого Очка",
-    "Кикшевый Громила",
-    "Очконосный Архонт",
-    "Анусоед Линьчиков",
-    "Бушизмовод Очковый",
-    "Кикша-Вонючка",
-    "Сипоносец Анусов",
-    "Паховый Линьчикарь",
-    "Заднепроходный Пророк",
-    "Кикша Мясная",
-    "Линьчикоанус",
-    "Очковый Шаман",
-    "Кикша-Разрушитель",
-    "Анусный Оракул",
-    "Бушист Сраный",
-    "Гнойно-Сипучий",
-    "Кикша-Вертолёт",
-    "Очкодав Бушизма",
-    "Сральный Линьчикарь",
-    "Кикшевый Сосальщик",
-    "Анусообниматель",
-    "Линьчикоразрыватель",
-    "Сипарь Очковый",
-    "Кикша-Мочалка",
-    "Бушизмовый Говнарь",
-    "Очковый Кикшевод",
-    "Анусоносный Линьчикарь",
-    "Кикша Сырная",
-    "Очкосос Легендарный",
-    "Линьчикоочкоед",
-    "Кикша-Свинтус",
-    "Очкодавец Бушистый",
-    "Анусовый Гроза",
-    "Кикша Плесневелая",
-    "Сипарь Глубинный",
-    "Очкоразрушитель Линьчиков",
-    "Кикша Кислотная",
-    "Бушизмопердун",
-    "Очковый Повелитель",
-    "Кикша-Венеричка",
-    "Линьчикоочковый",
-    "Гнойно-Кикшевый",
-    "Анусоноситель",
-    "Кикша-Хрюша",
-    "Очковый Линьчикарь",
-    "Сипарь Анусный",
-    "Кикша-Жмур",
-    "Очкозавр",
-    "Анусораздуватель",
-    "Линьчикоанальный",
-    "Кикша-Брызгун",
-    "Очковый Рыцарь",
-    "Гнойный Очкоед",
-    "Кикша-Мазохист",
-    "Анусоочиститель",
-    "Очкокидатель",
-    "Кикша-Червивый",
-    "Бушизмосраколиз",
-    "Очковый Инквизитор",
-    "Кикша-Перделка",
-    "Анусотряс",
-    "Сипарь Сральный",
-    "Очкосекущий",
-    "Кикша-Заднеприводный",
-    "Линьчикосос Анусов",
-    "Очконосец",
-    "Кикша-Вшивка",
-    "Анусобушонок",
-    "Очковый Зверь",
-    "Кикша-Срачмейстер",
-    "Гнойно-Анусный",
-    "Очкотрон 3000",
-    "Кикша-Бушист",
-    "Анусодушитель",
-    "Очковый Мрак",
-    "Кикша-Пердач",
-    "Анусорез",
-    "Очковый Линьчикоед",
-    "Кикша-Сипарь",
-    "Бушизмочкоед",
-    "Очковый Вонючка",
-    "Кикша-Анусонос",
-    "Сипарь Очковый Грозный",
-    "Попочка с сисечками",
-    "Анусоразбойник",
-    "Кикша-Очковерт",
-    "Очковый Линьчикоразрушитель",
+    "Лепман 110 Коричневый", "Лепман С Продристью", "Лепман Вечный Балабол", "Лепман Круг Самопотерянных",
+    "Верховный Бушист",
+    "Главный Анус", "Кикша-Пожиратель", "Бушистый Подзалупин", "Анусоносец", "Кикша Линьчиковая",
+    "Повелитель Бушизма и Анусов", "Сипарь С Очком", "Гнойный Линьчикарь", "Магистр Заднепрохода",
+    "Трипперный Бушонок", "Кикша-Пердуша", "Анусоразрушитель", "Сипун Глубокого Очка", "Кикшевый Громила",
+    "Очконосный Архонт", "Анусоед Линьчиков", "Бушизмовод Очковый", "Кикша-Вонючка", "Сипоносец Анусов",
+    "Паховый Линьчикарь", "Заднепроходный Пророк", "Кикша Мясная", "Линьчикоанус", "Очковый Шаман",
+    "Кикша-Разрушитель", "Анусный Оракул", "Бушист Сраный", "Гнойно-Сипучий", "Кикша-Вертолёт",
+    "Очкодав Бушизма", "Сральный Линьчикарь", "Кикшевый Сосальщик", "Анусообниматель", "Линьчикоразрыватель",
+    "Сипарь Очковый", "Кикша-Мочалка", "Бушизмовый Говнарь", "Очковый Кикшевод", "Анусоносный Линьчикарь",
+    "Кикша Сырная", "Очкосос Легендарный", "Линьчикоочкоед", "Кикша-Свинтус", "Очкодавец Бушистый",
+    "Анусовый Гроза", "Кикша Плесневелая", "Сипарь Глубинный", "Очкоразрушитель Линьчиков", "Кикша Кислотная",
+    "Бушизмопердун", "Очковый Повелитель", "Кикша-Венеричка", "Линьчикоочковый", "Гнойно-Кикшевый",
+    "Анусоноситель", "Кикша-Хрюша", "Очковый Линьчикарь", "Сипарь Анусный", "Кикша-Жмур", "Очкозавр",
+    "Анусораздуватель", "Линьчикоанальный", "Кикша-Брызгун", "Очковый Рыцарь", "Гнойный Очкоед",
+    "Кикша-Мазохист", "Анусоочиститель", "Очкокидатель", "Кикша-Червивый", "Бушизмосраколиз",
+    "Очковый Инквизитор", "Кикша-Перделка", "Анусотряс", "Сипарь Сральный", "Очкосекущий",
+    "Кикша-Заднеприводный", "Линьчикосос Анусов", "Очконосец", "Кикша-Вшивка", "Анусобушонок",
+    "Очковый Зверь", "Кикша-Срачмейстер", "Гнойно-Анусный", "Очкотрон 3000", "Кикша-Бушист",
+    "Анусодушитель", "Очковый Мрак", "Кикша-Пердач", "Анусорез", "Очковый Линьчикоед", "Кикша-Сипарь",
+    "Бушизмочкоед", "Очковый Вонючка", "Кикша-Анусонос", "Сипарь Очковый Грозный", "Попочка с сисечками",
+    "Анусоразбойник", "Кикша-Очковерт", "Очковый Линьчикоразрушитель",
     "Лепман Мастер Проливных Дождей", "Лепман Линьчиковый Гладиатор", "Лепман Снюс на Вечер",
     "Лепман Хранитель Преворкаута", "Лепман Писатель Битов", "Лепман Писаться Идём", "Лепман Сношающий Рты",
     "Лепман Легенда Жёлтого Потока", "Лепман Я Реально Красивый", "Лепман Властелин Линьчика", "Лепман Мастер 30 Секунд",
@@ -160,6 +81,7 @@ NICKNAMES = [
     "Лепман Сип-Гроза", "Лепман Сипун Шаман", "Лепман Сипный Волк", "Лепман Марафон Сипа"
 ]
 
+# можно фильтровать слова, которые не хочешь выпускать
 BANNED_SUBSTRINGS = {"даун"}
 NICKNAMES = [n for n in NICKNAMES if all(b.lower() not in n.lower() for b in BANNED_SUBSTRINGS)]
 
@@ -168,7 +90,6 @@ BTN_POST = "Отправить в канал"
 STORE_FILE = "channel_binding.json"
 
 _last_call = {}
-
 def _cooldown(chat_id: int, cooldown=1.0) -> bool:
     now = time.monotonic()
     prev = _last_call.get(chat_id, 0)
@@ -196,69 +117,72 @@ def save_binding(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("тыкни кнопку, чтобы выдать рофельное прозвище (•‿•)", reply_markup=make_markup())
+    await update.effective_message.reply_text(
+        "тыкни кнопку, чтобы выдать рофельное прозвище (•‿•)", reply_markup=make_markup()
+    )
 
 async def nickname_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _cooldown(update.effective_chat.id):
         return
-    await update.message.reply_html(pick_name_html())
+    await update.effective_message.reply_html(pick_name_html())
 
 async def lep_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _cooldown(update.effective_chat.id):
         return
+    msg = update.effective_message
     try:
-        await update.message.reply_html(pick_name_html())
+        await msg.reply_html(pick_name_html())
     except RetryAfter as e:
         await asyncio.sleep(e.retry_after + 0.2)
-        await update.message.reply_html(pick_name_html())
+        await msg.reply_html(pick_name_html())
 
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    txt = (update.message.text or "").strip()
+    txt = (update.effective_message.text or "").strip()
     if txt == BTN_GEN:
         if _cooldown(update.effective_chat.id):
-            await update.message.reply_html(pick_name_html())
+            await update.effective_message.reply_html(pick_name_html())
     elif txt == BTN_POST:
         bind = load_binding()
         target = bind.get("chat_identifier")
         if not target:
-            return await update.message.reply_text(
+            return await update.effective_message.reply_text(
                 "Канал не привязан. Используй /bind_channel @username или перешли мне пост из канала (для приватного)."
             )
         await context.bot.send_message(chat_id=target, text=pick_name_html(), parse_mode="HTML")
-        await update.message.reply_text("Отправил в канал ✔️")
+        await update.effective_message.reply_text("Отправил в канал ✔️")
     else:
-        await update.message.reply_text("жми кнопку ниже ↓", reply_markup=make_markup())
+        await update.effective_message.reply_text("жми кнопку ниже ↓", reply_markup=make_markup())
 
 async def bind_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        return await update.message.reply_text("Использование: /bind_channel @username_канала")
+        return await update.effective_message.reply_text("Использование: /bind_channel @username_канала")
     username = context.args[0]
     if not username.startswith("@"):
-        return await update.message.reply_text("Укажи канал с @, например: /bind_channel @my_channel")
+        return await update.effective_message.reply_text("Укажи канал с @, например: /bind_channel @my_channel")
     chat = await context.bot.get_chat(username)
     save_binding({"chat_identifier": username, "chat_title": chat.title or username, "chat_id": chat.id})
-    await update.message.reply_text(f"Привязал канал: {chat.title} (идентификатор {username})")
+    await update.effective_message.reply_text(f"Привязал канал: {chat.title} (идентификатор {username})")
 
 async def bind_by_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
+    msg = update.effective_message
     if msg and msg.forward_from_chat and msg.forward_from_chat.type == "channel":
         ch = msg.forward_from_chat
         save_binding({"chat_identifier": ch.id, "chat_title": ch.title or str(ch.id), "chat_id": ch.id})
-        await update.message.reply_text(f"Привязал приватный канал: {ch.title} (ID {ch.id}) ✅")
+        await update.effective_message.reply_text(f"Привязал приватный канал: {ch.title} (ID {ch.id}) ✅")
 
 async def post_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bind = load_binding()
     target = bind.get("chat_identifier")
     if not target:
-        return await update.message.reply_text("Сначала привяжи канал: /bind_channel @username или пришли форвард из канала.")
+        return await update.effective_message.reply_text("Сначала привяжи канал: /bind_channel @username или пришли форвард из канала.")
     await context.bot.send_message(chat_id=target, text=pick_name_html(), parse_mode="HTML")
-    await update.message.reply_text("Отправил в канал ✔️")
+    await update.effective_message.reply_text("Отправил в канал ✔️")
 
 async def error_handler(update: object, context):
     ex = context.error
     logging.warning(f"Error: {ex}")
     if isinstance(ex, RetryAfter):
-        await asyncio.sleep(ex.retry_after + 0.2)
+        await asyncio.sleep(e.retry_after + 0.2)
 
 def main():
     app = ApplicationBuilder().token(TOKEN).rate_limiter(AIORateLimiter()).build()
