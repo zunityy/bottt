@@ -5,16 +5,21 @@ import pytz
 from datetime import time, timedelta
 from typing import Dict, Any, List
 
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import (
+    Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
+)
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, CallbackContext, filters
+    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
+    CallbackContext, CallbackQueryHandler, filters
 )
 
 # ==== НАСТРОЙКИ ====
-TOKEN = "8384986879:AAGUBtm3Fg0cNUa-IlroraoWQ1M7eMz2PNM"
-BTN_GEN = "Сгенерировать погоняло"
+TOKEN = "8384986879:AAGUBtm3Fg0cNUa-IlroraoWQ1M7eMz2PNM"  # <-- вставь токен
+BTN_GEN = "Сгенерировать погоняло"          # reply-кнопка под полем ввода
+INLINE_BTN_GEN = "🎲 Сгенерировать мне погоняло"  # inline-кнопка под сообщением
 
 # ==== СПИСОК НИКОВ ====
+# ВСТАВЬ СВОЙ ПОЛНЫЙ СПИСОК СЮДА:
 NICKNAMES: List[str] = [
     "Лепман Коричневый Змей", "Лепман Марафон Коричневых Змей", "Лепман Снюсный Барон", "Лепман Король Желтых Дождей",
     "Лепман Линьчиковый Лежун", "Лепман Животик+2кг", "Лепман Балду Пинатель", "Лепман Унитаз — Это Жизнь",
@@ -100,7 +105,8 @@ NICKNAMES: List[str] = [
     "Лепман Ойкуменный Мочевик", "Лепман Пуджевый Гроза", "Лепман Трапчик-Бог", "Лепман Железный Ойкуменист", "Лепман Гашист-Легенда",
     "Лепман Пуджевый Принц", "Лепман Бушизмопад", "Лепман Ойкуменный Лев", "Лепман Трапчик-Гладиатор", "Лепман Гашик-Рыцарь",
     "Лепман Пуджевый Джин", "Лепман Бушизмолорд", "Лепман Железный Трапчиконосец", "Лепман Ойкуменный Волшебник", "Лепман Гашист-Пророк",
-    "Лепман Пуджевый Повелитель", "Лепман Трапчик-Книга", "Лепман Бушизмодемон", "Лепман Ойкуменный Поток", "Лепман Гашист-Марафонец", "Трап-Шаман", "Бушист на минималках", "ГашМэн 3000", "Ойкуменский Палач", "Феникс из Гашика",
+    "Лепман Пуджевый Повелитель", "Лепман Трапчик-Книга", "Лепман Бушизмодемон", "Лепман Ойкуменный Поток", "Лепман Гашист-Марафонец", "Трап-Шаман", 
+    "Бушист на минималках", "ГашМэн 3000", "Ойкуменский Палач", "Феникс из Гашика", "НАСВАЙ НАХУЙ",
     "Пыжик-Бушист", "Трап в Панаме", "Пудж-Браток", "Лепман с Района", "Битмейкер без Бита",
     "Флоу на Шпагате", "Ойкумена на Басах", "Гриндилла", "Бушизм без Фильтра", "ПсилоТраппер",
     "Гашичный Барон", "MC Пузырёк", "Рифма-Пудж", "Леп-Трап", "Скуф в Балаклаве",
@@ -154,13 +160,12 @@ NICKNAMES: List[str] = [
     "Лепман Очко-Сокрушитель", "Лепман Очко-Рокстар", "Лепман Панчи-Фараон", "Лепман Очко-Лев", "Лепман Очко-Монстр",
     "Лепман Очко-Призрак", "Лепман Очко-Демон", "Лепман Очко-Сократ", "Лепман Очко-Гений", "Лепман Очко-Папа Панчи",
     "Лепман Очко-Книга", "Лепман Очко-Певец", "Лепман Очко-Философ", "Лепман Очко-Марафонец", "Лепман Очко-Легенд"
-
 ]
 
 STATE_FILE = "state.json"
 
 
-# ==== ХРАНИЛКА ====
+# ================= ХРАНИЛКА =================
 def load_state() -> Dict[str, Any]:
     try:
         with open(STATE_FILE, "r", encoding="utf-8") as f:
@@ -183,13 +188,12 @@ def _ensure_entry(chat_id: int) -> Dict[str, Any]:
         }
         state[str(chat_id)] = entry
         save_state(state)
-    # страховка на старых состояниях
     entry.setdefault("history", [])
     entry.setdefault("setdaily_users", [])
     return entry
 
 
-# ==== НИКНЕЙМЫ ====
+# ================= НИКНЕЙМЫ =================
 def nickname_core(n: str) -> str:
     s = n
     if s.lower().startswith("лепман"):
@@ -229,7 +233,7 @@ def pick_poll_options(entry: Dict[str, Any], k: int = 5) -> List[str]:
     return res[:k]
 
 
-# ==== ОПРОСЫ ====
+# ================= ОПРОСЫ =================
 async def create_daily_poll(chat_id: int, context: CallbackContext) -> None:
     state = load_state()
     entry = _ensure_entry(chat_id)
@@ -247,7 +251,7 @@ async def create_daily_poll(chat_id: int, context: CallbackContext) -> None:
         allows_multiple_answers=False,
     )
 
-    # План: закрыть опрос и объявить победителя через 2 часа
+    # Закрыть опрос и объявить победителя через 2 часа
     context.job_queue.run_once(
         close_poll_and_announce,
         when=timedelta(hours=2),
@@ -291,32 +295,36 @@ async def close_poll_and_announce(ctx: CallbackContext) -> None:
         parse_mode="HTML",
     )
 
-    # Поставить реакцию 👍 или 👎 (если метод поддерживается версией PTB/бот API)
-    emoji = random.choice(["👍", "👎"])
+    # Реакция 👍/👎 — если поддерживается твоей версией PTB/бот API
     try:
-        # PTB v21+: bot.set_message_reaction(reaction=[ReactionTypeEmoji(emoji="👍")])
-        # Импортируем здесь, чтобы не падать на старых версиях
         from telegram._types import ReactionTypeEmoji
         await ctx.bot.set_message_reaction(
             chat_id=chat_id,
             message_id=sent.message_id,
-            reaction=[ReactionTypeEmoji(emoji=emoji)],
+            reaction=[ReactionTypeEmoji(emoji=random.choice(['👍', '👎']))],
             is_big=False,
         )
     except Exception as e:
-        # ничего страшного, просто пропускаем
         print(f"set_message_reaction failed for chat {chat_id}: {e}")
 
 
-# ==== ВСПОМОГАТЕЛЬНЫЕ ====
+# ================= ВСПОМОГАТЕЛЬНЫЕ =================
 def mention_text(user) -> str:
     return f"@{user.username}" if (user and user.username) else (user.first_name if user else "друг")
 
+def inline_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton(INLINE_BTN_GEN, callback_data="gen_nickname")]])
 
-# ==== КОМАНДЫ/КНОПКА ====
+
+# ================= КОМАНДЫ/КНОПКИ =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # reply-клавиатура + сообщение с inline-кнопкой
     kb = ReplyKeyboardMarkup([[BTN_GEN]], resize_keyboard=True)
     await update.effective_message.reply_text("жми кнопку ниже ↓", reply_markup=kb)
+    await update.effective_message.reply_text("Меню:", reply_markup=inline_menu())
+
+async def menu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text("Меню:", reply_markup=inline_menu())
 
 async def lep_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     html_text = pick_name_html(update.effective_chat.id)
@@ -327,13 +335,36 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         html_text = pick_name_html(update.effective_chat.id)
         await update.effective_message.reply_html(html_text)
 
+async def on_inline_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка нажатия inline-кнопки '🎲 Сгенерировать мне погоняло'."""
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+    user = query.from_user
+
+    # берём ник с учётом истории чата
+    entry = _ensure_entry(chat_id)
+    nick_full = pick_for_history(entry["history"])
+    state = load_state()
+    state[str(chat_id)] = entry
+    save_state(state)
+
+    core = nickname_core(nick_full)
+    who = mention_text(user)
+
+    # Шлём ОТДЕЛЬНЫМ сообщением (не редактируем меню, чтобы кнопка осталась)
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"{html.escape(who)} — <b>{html.escape(core)}</b>",
+        parse_mode="HTML",
+    )
+
 async def set_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Поведение:
-    - если чат ещё не подписан -> подписываем чат на daily-опросы (10:00 МСК), отвечаем, что включено;
-    - если чат уже подписан:
-        * если ЭТОТ пользователь уже писал /setdaily в этом чате — просто выдаём ему одноразовое погоняло;
-        * если ещё не писал — добавляем его в список отметившихся и отвечаем, что уже включено.
+    - если чат ещё не подписан -> подписываем на daily-опросы (10:00 МСК);
+    - если уже подписан:
+        * если этот пользователь уже писал /setdaily — выдаём разовый ник;
+        * если ещё нет — отмечаем и говорим, что уже включено.
     """
     chat_id = update.effective_chat.id
     user = update.effective_user
@@ -346,23 +377,20 @@ async def set_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state[str(chat_id)] = entry
         save_state(state)
         await update.effective_message.reply_text(
-            "Ежедневный опрос включён. В 10:00 по МСК пришлю голосовалку с 5 вариантами ✨"
+            "Ежедневный опрос включён. В 10:00 по МСК пришлю голосовалку с 5 вариантами"
         )
         return
 
-    # Уже подписан этот чат
     setusers = set(entry.get("setdaily_users", []))
     if user.id in setusers:
-        # повторное /setdaily от этого пользователя — выдаём разовый ник «для души»
         html_text = pick_name_html(chat_id)
         await update.effective_message.reply_html(html_text)
     else:
-        # первый раз этот юзер жмёт /setdaily в этом чате — просто отметим и скажем, что всё уже работает
         setusers.add(user.id)
         entry["setdaily_users"] = list(setusers)
         state[str(chat_id)] = entry
         save_state(state)
-        await update.effective_message.reply_text("Ежедневный опрос уже включён для этого чата 😉")
+        await update.effective_message.reply_text("Ежедневный опрос уже включён для этого чата")
 
 async def stop_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -377,13 +405,11 @@ async def stop_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("Ежедневный опрос уже выключен здесь.")
 
 async def testpoll(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ручной запуск опроса прямо сейчас в текущем чате."""
     await create_daily_poll(update.effective_chat.id, context)
 
 
-# ==== ДНЕВНОЕ ЗАДАНИЕ ====
+# ================= ДНЕВНОЕ ЗАДАНИЕ =================
 async def daily_poll_job(context: CallbackContext) -> None:
-    """В 10:00 МСК — пройти по всем подписанным чатам и запустить опросы."""
     state = load_state()
     for chat_id, entry in state.items():
         if entry.get("subscribed"):
@@ -393,7 +419,7 @@ async def daily_poll_job(context: CallbackContext) -> None:
                 print(f"create_daily_poll failed for chat {chat_id}: {e}")
 
 
-# ==== MAIN ====
+# ================= MAIN =================
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -403,11 +429,16 @@ def main():
 
     # команды/хендлеры
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("lep", lep_cmd))          # одноразовый «Лепман — ...»
-    app.add_handler(CommandHandler("setdaily", set_daily))   # подписка/поведение как описано выше
-    app.add_handler(CommandHandler("stopdaily", stop_daily)) # отключить опросы
-    app.add_handler(CommandHandler("testpoll", testpoll))    # тест: запустить опрос сейчас
+    app.add_handler(CommandHandler("menu", menu_cmd))        # показать inline-меню ещё раз
+    app.add_handler(CommandHandler("lep", lep_cmd))
+    app.add_handler(CommandHandler("setdaily", set_daily))
+    app.add_handler(CommandHandler("stopdaily", stop_daily))
+    app.add_handler(CommandHandler("testpoll", testpoll))
+
+    # reply-кнопка
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_button))
+    # inline-кнопка
+    app.add_handler(CallbackQueryHandler(on_inline_click, pattern="^gen_nickname$"))
 
     app.run_polling()
 
