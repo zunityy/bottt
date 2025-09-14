@@ -21,7 +21,7 @@ from telegram.ext import (
 )
 
 # ========== Настройки ==========
-TOKEN = os.environ.get("8384986879:AAGUBtm3Fg0cNUa-IlroraoWQ1M7eMz2PNM")
+TOKEN = os.environ.get("TOKEN")
 if not TOKEN:
     raise RuntimeError("Please set the TOKEN environment variable")
 
@@ -475,3 +475,4 @@ async def telegram_webhook(token: str, request: Request):
 # Для локального теста можно запустить uvicorn
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+
