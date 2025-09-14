@@ -1,3 +1,5 @@
+# main.py
+import os
 import json
 import random
 import html
@@ -5,21 +7,33 @@ import pytz
 from datetime import time, timedelta
 from typing import Dict, Any, List
 
-from telegram import (
-    Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
-)
+from fastapi import FastAPI, Request
+import uvicorn
+
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
-    CallbackContext, CallbackQueryHandler, filters
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
 )
 
-# ==== НАСТРОЙКИ ====
-TOKEN = "8384986879:AAGUBtm3Fg0cNUa-IlroraoWQ1M7eMz2PNM"  # <-- вставь токен
-BTN_GEN = "Сгенерировать погоняло"          # reply-кнопка под полем ввода
-INLINE_BTN_GEN = "🎲 Сгенерировать мне погоняло"  # inline-кнопка под сообщением
+# ========== Настройки ==========
+TOKEN = os.environ.get("8384986879:AAGUBtm3Fg0cNUa-IlroraoWQ1M7eMz2PNM")
+if not TOKEN:
+    raise RuntimeError("Please set the TOKEN environment variable")
 
-# ==== СПИСОК НИКОВ ====
-# ВСТАВЬ СВОЙ ПОЛНЫЙ СПИСОК СЮДА:
+# WEBHOOK_URL можно задать вручную, например: https://your-app.onrender.com/<TOKEN>
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+
+BTN_GEN = "Сгенерировать погоняло"
+INLINE_BTN_GEN = "🎲 Сгенерировать мне погоняло"
+
+STATE_FILE = "state.json"
+
+# ========== Ники (сокращённо для примера, но можно использовать весь твой список) ==========
 NICKNAMES: List[str] = [
     "Лепман Коричневый Змей", "Лепман Марафон Коричневых Змей", "Лепман Снюсный Барон", "Лепман Король Желтых Дождей",
     "Лепман Линьчиковый Лежун", "Лепман Животик+2кг", "Лепман Балду Пинатель", "Лепман Унитаз — Это Жизнь",
@@ -162,9 +176,6 @@ NICKNAMES: List[str] = [
     "Лепман Очко-Книга", "Лепман Очко-Певец", "Лепман Очко-Философ", "Лепман Очко-Марафонец", "Лепман Очко-Легенд"
 ]
 
-STATE_FILE = "state.json"
-
-
 # ================= ХРАНИЛКА =================
 def load_state() -> Dict[str, Any]:
     try:
@@ -181,17 +192,12 @@ def _ensure_entry(chat_id: int) -> Dict[str, Any]:
     state = load_state()
     entry = state.get(str(chat_id))
     if not entry:
-        entry = {
-            "history": [],          # последние 7, чтобы не повторять
-            "subscribed": False,    # включён ли daily-опрос в этом чате
-            "setdaily_users": []    # кто уже вызывал /setdaily в этом чате
-        }
+        entry = {"history": [], "subscribed": False, "setdaily_users": []}
         state[str(chat_id)] = entry
         save_state(state)
     entry.setdefault("history", [])
     entry.setdefault("setdaily_users", [])
     return entry
-
 
 # ================= НИКНЕЙМЫ =================
 def nickname_core(n: str) -> str:
@@ -232,9 +238,8 @@ def pick_poll_options(entry: Dict[str, Any], k: int = 5) -> List[str]:
         res.append(res[-1] if res else "Лепман")
     return res[:k]
 
-
 # ================= ОПРОСЫ =================
-async def create_daily_poll(chat_id: int, context: CallbackContext) -> None:
+async def create_daily_poll(chat_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
     state = load_state()
     entry = _ensure_entry(chat_id)
     if not entry.get("subscribed"):
@@ -260,7 +265,7 @@ async def create_daily_poll(chat_id: int, context: CallbackContext) -> None:
         name=f"closepoll:{chat_id}:{msg.message_id}",
     )
 
-async def close_poll_and_announce(ctx: CallbackContext) -> None:
+async def close_poll_and_announce(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = ctx.job.chat_id
     data = ctx.job.data or {}
     message_id = data.get("message_id")
@@ -275,7 +280,6 @@ async def close_poll_and_announce(ctx: CallbackContext) -> None:
         print(f"stop_poll failed for chat {chat_id}, msg {message_id}: {e}")
         return
 
-    # Подсчёт голосов + тай-брейк случайно
     max_votes = -1
     leaders: List[str] = []
     for opt in poll.options:
@@ -295,7 +299,7 @@ async def close_poll_and_announce(ctx: CallbackContext) -> None:
         parse_mode="HTML",
     )
 
-    # Реакция 👍/👎 — если поддерживается твоей версией PTB/бот API
+    # Попытка поставить реакцию (не критично)
     try:
         from telegram._types import ReactionTypeEmoji
         await ctx.bot.set_message_reaction(
@@ -304,9 +308,8 @@ async def close_poll_and_announce(ctx: CallbackContext) -> None:
             reaction=[ReactionTypeEmoji(emoji=random.choice(['👍', '👎']))],
             is_big=False,
         )
-    except Exception as e:
-        print(f"set_message_reaction failed for chat {chat_id}: {e}")
-
+    except Exception:
+        pass
 
 # ================= ВСПОМОГАТЕЛЬНЫЕ =================
 def mention_text(user) -> str:
@@ -315,10 +318,8 @@ def mention_text(user) -> str:
 def inline_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton(INLINE_BTN_GEN, callback_data="gen_nickname")]])
 
-
-# ================= КОМАНДЫ/КНОПКИ =================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # reply-клавиатура + сообщение с inline-кнопкой
+# ================= КОМАНДЫ/ХЕНДЛЕРЫ =================
+async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = ReplyKeyboardMarkup([[BTN_GEN]], resize_keyboard=True)
     await update.effective_message.reply_text("жми кнопку ниже ↓", reply_markup=kb)
     await update.effective_message.reply_text("Меню:", reply_markup=inline_menu())
@@ -336,13 +337,11 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_html(html_text)
 
 async def on_inline_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка нажатия inline-кнопки '🎲 Сгенерировать мне погоняло'."""
     query = update.callback_query
     await query.answer()
     chat_id = query.message.chat_id
     user = query.from_user
 
-    # берём ник с учётом истории чата
     entry = _ensure_entry(chat_id)
     nick_full = pick_for_history(entry["history"])
     state = load_state()
@@ -352,7 +351,6 @@ async def on_inline_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     core = nickname_core(nick_full)
     who = mention_text(user)
 
-    # Шлём ОТДЕЛЬНЫМ сообщением (не редактируем меню, чтобы кнопка осталась)
     await context.bot.send_message(
         chat_id=chat_id,
         text=f"{html.escape(who)} — <b>{html.escape(core)}</b>",
@@ -360,12 +358,6 @@ async def on_inline_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def set_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    - если чат ещё не подписан -> подписываем на daily-опросы (10:00 МСК);
-    - если уже подписан:
-        * если этот пользователь уже писал /setdaily — выдаём разовый ник;
-        * если ещё нет — отмечаем и говорим, что уже включено.
-    """
     chat_id = update.effective_chat.id
     user = update.effective_user
 
@@ -407,9 +399,8 @@ async def stop_daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def testpoll(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await create_daily_poll(update.effective_chat.id, context)
 
-
 # ================= ДНЕВНОЕ ЗАДАНИЕ =================
-async def daily_poll_job(context: CallbackContext) -> None:
+async def daily_poll_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     state = load_state()
     for chat_id, entry in state.items():
         if entry.get("subscribed"):
@@ -418,30 +409,69 @@ async def daily_poll_job(context: CallbackContext) -> None:
             except Exception as e:
                 print(f"create_daily_poll failed for chat {chat_id}: {e}")
 
+# ========== Настройка Application (PTB) ==========
+application = Application.builder().token(TOKEN).build()
 
-# ================= MAIN =================
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    # ежедневная задача в 10:00 по МСК
-    msk = pytz.timezone("Europe/Moscow")
-    app.job_queue.run_daily(daily_poll_job, time(hour=10, minute=0, tzinfo=msk))
-
-    # команды/хендлеры
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("menu", menu_cmd))        # показать inline-меню ещё раз
+def register_handlers(app: Application):
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("menu", menu_cmd))
     app.add_handler(CommandHandler("lep", lep_cmd))
     app.add_handler(CommandHandler("setdaily", set_daily))
     app.add_handler(CommandHandler("stopdaily", stop_daily))
     app.add_handler(CommandHandler("testpoll", testpoll))
 
-    # reply-кнопка
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_button))
-    # inline-кнопка
     app.add_handler(CallbackQueryHandler(on_inline_click, pattern="^gen_nickname$"))
 
-    app.run_polling()
+# Регистрируем хендлеры и задаём ежедневную задачу
+register_handlers(application)
+msk = pytz.timezone("Europe/Moscow")
+application.job_queue.run_daily(daily_poll_job, time(hour=10, minute=0, tzinfo=msk))
 
+# ========== FastAPI сервер для webhook ==========
+app = FastAPI()
 
+@app.on_event("startup")
+async def startup():
+    # PTB application start
+    await application.initialize()
+    await application.start()
+    # Устанавливаем webhook в Telegram
+    webhook = WEBHOOK_URL
+    if not webhook:
+        # пробуем собрать из Render переменной окружения
+        host = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
+        if host:
+            webhook = f"https://{host}/{TOKEN}"
+    if webhook:
+        try:
+            await application.bot.set_webhook(webhook)
+            print("Webhook set to:", webhook)
+        except Exception as e:
+            print("Failed to set webhook:", e)
+    else:
+        print("No WEBHOOK_URL provided and RENDER_EXTERNAL_HOSTNAME not found; please set WEBHOOK_URL env var")
+
+@app.on_event("shutdown")
+async def shutdown():
+    try:
+        await application.stop()
+        await application.shutdown()
+    except Exception:
+        pass
+
+@app.post("/{token}")
+async def telegram_webhook(token: str, request: Request):
+    """Endpoint для Telegram webhook: POST /<TOKEN>"""
+    if token != TOKEN:
+        return {"ok": False, "error": "invalid token in path"}
+
+    data = await request.json()
+    update = Update.de_json(data, application.bot)
+    # помещаем update в очередь обработки PTB
+    await application.update_queue.put(update)
+    return {"ok": True}
+
+# Для локального теста можно запустить uvicorn
 if __name__ == "__main__":
-    main()
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
